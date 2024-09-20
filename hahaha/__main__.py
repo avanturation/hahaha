@@ -1,14 +1,13 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from loguru import logger
-
-
-from orjson import loads
-
-import time
 import random
+import time
+
+import httpx
+from loguru import logger
+from orjson import loads
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
 
 
 class hahaha:
@@ -37,9 +36,18 @@ class hahaha:
                 logger.debug(f"Got Session: {session}")
                 break
 
+    def _download_image(self, url: str) -> None:
+        filename = url.split("/")[-1].split("?")[
+            0
+        ]  # this is hardcoded piece of shit, better way suggested
+        request = httpx.get(url)
+
+        with open(filename, "wb") as handler:
+            handler.write(request.content)
+
     def main(self, url: str):
         self.driver.get("https://instagram.com")
-        logger.info("로그인 ㄱㄱ")
+        logger.info("Login to Proceed.")
         self._check_login()
 
         json_endpoint = f"view-source:{url}?__a=1&__d=dis"
@@ -55,11 +63,13 @@ class hahaha:
         for media in carousel_media:
             candidate = media["image_versions2"]["candidates"]
             largest_image = max(candidate, key=lambda x: x["width"])
-            print(largest_image["url"])
+
+            self._download_image(largest_image["url"])
+            self._mimic_human()
 
         time.sleep(15)
 
 
 if __name__ == "__main__":
     instance = hahaha()
-    instance.main("https://www.instagram.com/p/C_-tr4YSjeH/")
+    instance.main("https://www.instagram.com/p/CuW3humRsBz/")
