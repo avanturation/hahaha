@@ -1,13 +1,15 @@
+import argparse
+import os
 import random
 import time
 
+import chromedriver_autoinstaller
 import httpx
 from loguru import logger
 from orjson import loads
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
+from tqdm import tqdm
 
 
 class hahaha:
@@ -19,9 +21,9 @@ class hahaha:
             "user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         )
 
-        self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()), options=options
-        )
+        chromedriver_autoinstaller.install()
+
+        self.driver = webdriver.Chrome(options=options)
 
     def _mimic_human(self) -> None:
         sleep_time = random.randint(500, 5000) / 1000
@@ -36,40 +38,78 @@ class hahaha:
                 logger.debug(f"Got Session: {session}")
                 break
 
-    def _download_image(self, url: str) -> None:
-        filename = url.split("/")[-1].split("?")[
-            0
-        ]  # this is hardcoded piece of shit, better way suggested
-        request = httpx.get(url)
+    def _download_image(
+        self, url: str, prefix: str = "", folder_name="default"
+    ) -> None:
+        if not os.path.exists(f"./{folder_name}"):
+            os.makedirs(folder_name)
 
-        with open(filename, "wb") as handler:
-            handler.write(request.content)
+        filename = f"{folder_name}/{prefix}{url.split('/')[-1].split('?')[0]}"
+        with open(filename, "wb") as fp:
+            with httpx.stream("GET", url) as resp:
+                total_bytes = int(resp.headers["Content-Length"])
 
-    def main(self, url: str):
+                with tqdm(
+                    total=total_bytes,
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    unit="B",
+                    desc=filename,
+                ) as progress:
+                    num_bytes_downloaded = resp.num_bytes_downloaded
+
+                for chunk in resp.iter_bytes(1024):
+                    fp.write(chunk)
+                    progress.update(resp.num_bytes_downloaded - num_bytes_downloaded)
+                    num_bytes_downloaded = resp.num_bytes_downloaded
+
+    def _parse_data(self) -> dict:
+        content = self.driver.find_element(By.CLASS_NAME, "line-content")
+        parsed_json = loads(content.text)
+
+        return parsed_json["items"][0]
+
+    def main(self, url_array: list):
         self.driver.get("https://instagram.com")
         logger.info("Login to Proceed.")
+
         self._check_login()
-
-        json_endpoint = f"view-source:{url}?__a=1&__d=dis"
-
         self._mimic_human()
 
-        self.driver.get(json_endpoint)
-        content = self.driver.find_element(By.CLASS_NAME, "line-content")
-
-        parsed_json = loads(content.text)
-        carousel_media = parsed_json["items"][0]["carousel_media"]
-
-        for media in carousel_media:
-            candidate = media["image_versions2"]["candidates"]
-            largest_image = max(candidate, key=lambda x: x["width"])
-
-            self._download_image(largest_image["url"])
+        for url in url_array:
+            self.driver.get(f"view-source:{url}?__a=1&__d=dis")
             self._mimic_human()
 
-        time.sleep(15)
+            content = self._parse_data()
+            carousel_media = content["carousel_media"]
+            username = content["user"]["username"]
+            post_code = content["code"]
+
+            for media in carousel_media:
+                candidate = media["image_versions2"]["candidates"]
+                largest_image = max(candidate, key=lambda x: x["width"])
+
+                self._download_image(
+                    largest_image["url"],
+                    prefix=f"{username}_{post_code}_",
+                    folder_name=post_code,
+                )
+                self._mimic_human()
 
 
 if __name__ == "__main__":
+    argparser = argparse.ArgumentParser()
+
+    argparser.add_argument(
+        "--url",
+        dest="url",
+        type=str,
+        nargs="+",
+        help="Instagram post URL to save",
+        required=True,
+    )
+
+    url_array = argparser.parse_args().url
+
     instance = hahaha()
-    instance.main("https://www.instagram.com/p/CuW3humRsBz/")
+    instance.main(url_array)

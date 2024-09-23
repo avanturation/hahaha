@@ -3,3 +3,5 @@ webdriver_manager
 orjson
 loguru
 httpx
+tqdm
+chromedriver-autoinstaller
